@@ -1,0 +1,106 @@
+import csv
+import requests
+import json
+from datetime import datetime, timedelta, date
+import mysql.connector
+
+
+class YugiohApi:
+    """
+    https://db.ygoprodeck.com/api-guide/
+
+    This class handles the updating of yugioh cards to the system if not found by uuid in the mysql table.
+    """
+    def fetch_card(self, card_name: str, set_name: str):
+        card_name = card_name.replace(' ', '%20')
+        set_name = set_name.replace(' ', '%20')
+        response = requests.get(f'https://db.ygoprodeck.com/api/v7/cardinfo.php?name={card_name}&cardset={set_name}')
+        yugi_card = response.json()['data'][0]
+        print(response.text)
+        return yugi_card
+
+    def get_all_cards(self) -> json:
+        url = 'https://db.ygoprodeck.com/api/v7/cardinfo.php'
+        all_yugioh_cards = requests.get(url).json()
+        with open('yugi_all_cards.json', 'w') as f:
+            json.dump(all_yugioh_cards, f)
+        return all_yugioh_cards
+
+    def get_all_new_cards(self):
+        end_date = datetime.now()
+        start_date = end_date - timedelta(weeks=16)
+        url = f"https://db.ygoprodeck.com/api/v7/cardinfo.php?&startdate={start_date.strftime('%m/%d/%Y')}&enddate={end_date.strftime('%m/%d/%Y')}&dateregion=tcg_date"
+        all_yugioh_cards = requests.get(url).json()
+        with open(f'yugi_all_cards{datetime.now().strftime("-%m-%d-%Y")}.json', 'w') as f:
+            json.dump(all_yugioh_cards, f)
+        return all_yugioh_cards
+
+    def create_csv_from_yugi_cards_dict(self, all_yugioh_cards):
+        items_list = []
+        for card in all_yugioh_cards['data']:
+            try:
+                card_id = card['id']
+                card_name = card['name']
+                card_type = card['type']
+                card_description = card['desc']
+
+                large_pic_url = card['card_images'][0]['image_url']
+                small_pic_url = card['card_images'][0]['image_url_small']
+                cropped_pic_url = card['card_images'][0]['image_url_cropped']
+
+                for i, card_set in enumerate(card['card_sets']):
+                    set_name = card_set['set_name']
+                    card_number = card_set['set_code']
+                    price_regular = card_set['set_price']
+
+                    try:
+                        if price_regular == '0':
+                            price_regular = card['card_prices'][i]['tcgplayer_price']
+                    except (KeyError, IndexError):
+                        continue
+
+                    rarity = card_set['set_rarity']
+                    scryfall_id = f'{card_id}-{card_number}-{rarity.lower().replace(" ", "")}'
+
+                    items_list.append([card_name, set_name, "", scryfall_id, "", small_pic_url, large_pic_url,
+                                       card_number, price_regular, 0, rarity, card_type, "", 3, card_description])
+
+            except KeyError as e:
+                print(f"Error processing card {card_name}: {e}")
+
+        with open(f'all_yugi_cards{date.today().strftime("-%d-%m-%Y")}.csv', 'w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+            writer.writerow(["card_name", "set_name", "set_code", "scryfall_id", "mkm_id", "small_pic_url",
+                             "large_pic_url", "card_number", "price_regular", "price_foil", "rarity", "card_type", "color",
+                             "game_type_id", "oracle_text"])
+            for row in items_list:
+                writer.writerow(row)
+
+    def yugi_cards_to_db(self, file_to_upload="all_yugi_cards-some_date.csv"):  # added this here for showing parts of working code.
+        mydb = mysql.connector.connect(host='some_host.us-east-1.rds.amazonaws.com',
+                                       user='user', passwd='pass', database="db")
+        cursor = mydb.cursor()
+
+        file = open(file_to_upload, "r", encoding='utf-8')
+        data = list(csv.reader(file, delimiter=","))
+        file.close()
+        data.pop(0)
+        sql_command = f"INSERT IGNORE INTO some_table (card_name, set_name, set_code, scryfall_id, mkm_id, small_pic_url, " \
+                      f"large_pic_url, card_number, price_regular, price_foil, rarity, card_type, color, game_type_id, oracle_text) VALUES " \
+                      f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        cursor.executemany(sql_command, data)
+        mydb.commit()
+
+
+def run():
+    app = YugiohApi()
+    #     app.create_csv_from_yugi_cards_dict(app.get_all_cards())
+    app.create_csv_from_yugi_cards_dict(app.get_all_new_cards())
+    print('yugi csv file created.')
+
+
+if __name__ == '__main__':
+    # run = YugiohApi()
+    # run.fetch_card('tornado dragon', Duel Devastator')
+    # run.get_all_cards()
+    run()
