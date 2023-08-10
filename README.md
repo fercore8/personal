@@ -21,7 +21,7 @@ Exporting the Yugioh card data to CSV allows for easy data analysis, sharing, an
 Python libraries: csv, requests, json, datetime, mysql.connector, urllib.parse.
 MySQL database credentials and setup if you wish to use the database upload functionality.
 ### How to use:
-Run the script with the command: python yugioh_connect.py .
+Run the script with the command: python fetch_yugi_cards.py .
 The script will fetch all new cards from the past 16 weeks and generate a CSV file named all_yugi_cards<current_date>.csv.
 ### MySQL Integration:
 The script also contains a method (yugi_cards_to_db()) that allows for uploading the CSV data to a MySQL database if the unique identifier is not there. 
